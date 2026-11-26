@@ -1,66 +1,133 @@
-# PID-DC-Motor-Speed-Controller
-Design and development of a PID-based DC motor speed control system using MATLAB/Simulink and hardware testing.
-# PID Speed and Position Controller for a DC Motor
+# PID-DC-Motor-Speed-Controller Diagram + the code
 
-## Project Overview
+The wiring Diagram
 
-This project aims to design, simulate, and implement a PID (Proportional-Integral-Derivative) controller to regulate the speed of a DC motor.
+![Uploading Screenshot 2026-11-26 at 2.35.16 pm.png…]()
 
-The main objective is to develop a control system capable of maintaining a desired motor speed, responding to changes in speed commands, and compensating for external disturbances.
 
-The project will combine MATLAB/Simulink modelling, Arduino programming, and physical hardware testing to explore real-world control systems engineering.
 
-## Project Objectives
 
-- Develop a mathematical model of a DC motor.
-- Design and tune a PID controller using MATLAB/Simulink.
-- Implement the controller on an Arduino microcontroller.
-- Measure motor speed using a quadrature encoder.
-- Compare simulation results against experimental measurements.
-- Evaluate system performance using overshoot, settling time, rise time, and steady-state error.
-- Explore position control as a potential extension.
+The code:
 
-## Planned Hardware
+```cpp
+#include <SPI.h>
+#include <MFRC522.h>
+#include <ESP32Servo.h>
 
-| Component | Purpose |
-|---|---|
-| Arduino Uno R4 or Nano | Runs the control algorithm |
-| 12V DC geared motor with quadrature encoder | Motor being controlled and measured |
-| TB6612FNG motor driver | Controls motor power and direction |
-| 12V 2A power supply | Supplies the motor |
-| 10kΩ potentiometer | Adjusts the desired motor speed |
-| 100µF capacitor | Helps stabilise the motor supply |
+// Complete project code
+const int ENA = D5;
+const int IN1 = D2;
+const int IN2 = D3;
 
-## Software and Tools
+const int encoderA = D8;
+const int encoderB = D7;
+const int potPin = A2;
 
-- **MATLAB/Simulink:** System modelling, simulation, and PID tuning.
-- **Arduino IDE / C++:** Implementing the control algorithm.
-- **Python:** Recording, processing, and plotting experimental data.
-- **GitHub:** Version control and technical documentation.
-- **Wokwi:** Initial circuit and encoder simulations.
+volatile long encoderCount = 0;
 
-## Planned Development Stages
+// Encoder counts per output shaft revolution
+const float CPR = 600.0;
+const float MAX_RPM = 100.0;
 
-1. Learn PID control principles and embedded programming fundamentals.
-2. Assemble the motor, driver, encoder, and Arduino.
-3. Test motor operation and encoder measurements.
-4. Identify the motor's dynamic behaviour using experimental data.
-5. Develop and tune a PID controller in MATLAB/Simulink.
-6. Implement the controller on Arduino.
-7. Evaluate and compare experimental and simulated results.
-8. Investigate potential position-control improvements.
+// Initial PID tuning values
+float Kp = 2.0;
+float Ki = 0.5;
+float Kd = 0.1;
 
-## Current Progress
+float integral = 0;
+float previousError = 0;
 
-**Status: COMPLETED**
+unsigned long previousTime = 0;
 
-The project has been successfully completed, progressing from initial research and hardware selection to software development, hardware integration, and experimental testing.
+void encoderISR() {
+  if (digitalRead(encoderA) == digitalRead(encoderB)) {
+    encoderCount++;
+  } else {
+    encoderCount--;
+  }
+}
 
-The final prototype demonstrates the practical application of control systems, embedded programming, and electronic hardware integration.
+void setup() {
+  Serial.begin(115200);
 
-The source code, wiring diagrams, experimental results, and demonstration videos are included in this repository where available.
-## Expected Outcome
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
 
-The intended outcome is a functioning closed-loop DC motor controller supported by documented test results, simulation comparisons, and an evaluation of the system's limitations.
+  pinMode(encoderA, INPUT_PULLUP);
+  pinMode(encoderB, INPUT_PULLUP);
 
-This project is part of my engineering portfolio, focusing on control systems, embedded programming, and model-based design.
+  analogReadResolution(12);
+  analogWriteResolution(8);
+
+  attachInterrupt(
+    digitalPinToInterrupt(encoderA),
+    encoderISR,
+    CHANGE
+  );
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, 0);
+
+  previousTime = millis();
+}
+
+void loop() {
+  unsigned long currentTime = millis();
+
+  if (currentTime - previousTime >= 100) {
+
+    float dt = (currentTime - previousTime) / 1000.0;
+    previousTime = currentTime;
+
+    noInterrupts();
+    long counts = encoderCount;
+    encoderCount = 0;
+    interrupts();
+
+    // Calculate actual motor speed
+    float actualRPM = abs(counts) * 60.0 / (CPR * dt);
+
+    // Read desired motor speed
+    int potValue = analogRead(potPin);
+    float targetRPM = potValue * MAX_RPM / 4095.0;
+
+    float error = targetRPM - actualRPM;
+    float derivative = (error - previousError) / dt;
+
+    // PID control
+    float candidateIntegral = integral + error * dt;
+
+    float output = Kp * error
+                 + Ki * candidateIntegral
+                 + Kd * derivative;
+
+    // Prevent integral windup
+    if ((output >= 0 && output <= 255) ||
+        (output > 255 && error < 0) ||
+        (output < 0 && error > 0)) {
+      integral = candidateIntegral;
+    }
+
+    int pwm = constrain((int)output, 0, 255);
+
+    if (targetRPM < 1.0) {
+      pwm = 0;
+      integral = 0;
+    }
+
+    analogWrite(ENA, pwm);
+    previousError = error;
+
+    // Serial Plotter output
+    Serial.print("Target_RPM:");
+    Serial.print(targetRPM);
+
+    Serial.print("\tActual_RPM:");
+    Serial.print(actualRPM);
+
+    Serial.print("\tPWM:");
+    Serial.println(pwm);
+  }
+}
