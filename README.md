@@ -2,8 +2,7 @@
 
 The wiring Diagram
 
-![Uploading Screenshot 2026-11-26 at 2.35.16 pm.png…]()
-
+<img width="948" height="630" alt="image" src="https://github.com/user-attachments/assets/9a6eda00-6de8-4ec5-91b3-1f6bec1051f4" />
 
 
 
