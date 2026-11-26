@@ -52,14 +52,13 @@ The project will combine MATLAB/Simulink modelling, Arduino programming, and phy
 
 ## Current Progress
 
-**Status: Planning and preparation**
+**Status: COMPLETED**
 
-The initial project scope, proposed hardware, software requirements, and development stages have been defined.
+The project has been successfully completed, progressing from initial research and hardware selection to software development, hardware integration, and experimental testing.
 
-The next steps are to complete introductory control systems training, obtain the required components, and begin encoder simulation.
+The final prototype demonstrates the practical application of control systems, embedded programming, and electronic hardware integration.
 
-Experimental results, code, plots, and photographs will be added as the project progresses.
-
+The source code, wiring diagrams, experimental results, and demonstration videos are included in this repository where available.
 ## Expected Outcome
 
 The intended outcome is a functioning closed-loop DC motor controller supported by documented test results, simulation comparisons, and an evaluation of the system's limitations.
