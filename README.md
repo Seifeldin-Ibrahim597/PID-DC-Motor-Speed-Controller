@@ -9,124 +9,127 @@ The wiring Diagram
 The code:
 
 ```cpp
-#include <SPI.h>
-#include <MFRC522.h>
-#include <ESP32Servo.h>
+#include <InterruptEncoder.h>
 
-// Complete project code
-const int ENA = D5;
-const int IN1 = D2;
-const int IN2 = D3;
+InterruptEncoder encoder;
 
-const int encoderA = D8;
-const int encoderB = D7;
+const int motorForward = D5;
+const int motorBackward = D3;
 const int potPin = A2;
 
-volatile long encoderCount = 0;
+const float COUNTS_PER_REV = 600.0;
 
-// Encoder counts per output shaft revolution
-const float CPR = 600.0;
-const float MAX_RPM = 100.0;
+long lastCount = 0;
+unsigned long lastTime = 0;
 
-// Initial PID tuning values
-float Kp = 2.0;
-float Ki = 0.5;
-float Kd = 0.1;
-
-float integral = 0;
-float previousError = 0;
-
-unsigned long previousTime = 0;
-
-void encoderISR() {
-  if (digitalRead(encoderA) == digitalRead(encoderB)) {
-    encoderCount++;
-  } else {
-    encoderCount--;
-  }
-}
+float rpm = 0;
+String direction = "stop";
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(ENA, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
+  encoder.attach(D8, D7);
 
-  pinMode(encoderA, INPUT_PULLUP);
-  pinMode(encoderB, INPUT_PULLUP);
+  pinMode(motorForward, OUTPUT);
+  pinMode(motorBackward, OUTPUT);
+  pinMode(potPin, INPUT);
 
   analogReadResolution(12);
   analogWriteResolution(8);
 
-  attachInterrupt(
-    digitalPinToInterrupt(encoderA),
-    encoderISR,
-    CHANGE
-  );
+  analogWrite(motorForward, 0);
+  analogWrite(motorBackward, 0);
 
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  analogWrite(ENA, 0);
+  lastCount = encoder.read();
+  lastTime = millis();
 
-  previousTime = millis();
+  Serial.println("Motor Controller Ready");
+  Serial.println("Commands: forward, backward, stop");
 }
 
 void loop() {
+
+  // Read potentiometer
+  int potValue = analogRead(potPin);
+
+  // Convert potentiometer reading to voltage
+  float voltage = potValue * 3.3 / 4095.0;
+
+  // Convert potentiometer reading to PWM
+  int pwm = map(potValue, 0, 4095, 0, 255);
+
+  // Calculate speed percentage
+  float speedPercentage = pwm * 100.0 / 255.0;
+
+  // Read direction commands
+  if (Serial.available() > 0) {
+
+    String command = Serial.readStringUntil('\n');
+
+    command.trim();
+    command.toLowerCase();
+
+    if (command == "forward") {
+      direction = "forward";
+    }
+
+    else if (command == "backward" ||
+             command == "backwards") {
+      direction = "backward";
+    }
+
+    else if (command == "stop") {
+      direction = "stop";
+    }
+  }
+
+  // Motor direction and speed control
+  if (direction == "forward") {
+    analogWrite(motorBackward, 0);
+    analogWrite(motorForward, pwm);
+  }
+
+  else if (direction == "backward") {
+    analogWrite(motorForward, 0);
+    analogWrite(motorBackward, pwm);
+  }
+
+  else {
+    analogWrite(motorForward, 0);
+    analogWrite(motorBackward, 0);
+  }
+
+  // Calculate RPM every 100 milliseconds
   unsigned long currentTime = millis();
 
-  if (currentTime - previousTime >= 100) {
+  if (currentTime - lastTime >= 100) {
 
-    float dt = (currentTime - previousTime) / 1000.0;
-    previousTime = currentTime;
+    long currentCount = encoder.read();
+    long countDifference = currentCount - lastCount;
 
-    noInterrupts();
-    long counts = encoderCount;
-    encoderCount = 0;
-    interrupts();
+    float elapsedTime =
+        (currentTime - lastTime) / 1000.0;
 
-    // Calculate actual motor speed
-    float actualRPM = abs(counts) * 60.0 / (CPR * dt);
+    rpm = (abs(countDifference) / COUNTS_PER_REV)
+          * (60.0 / elapsedTime);
 
-    // Read desired motor speed
-    int potValue = analogRead(potPin);
-    float targetRPM = potValue * MAX_RPM / 4095.0;
+    lastCount = currentCount;
+    lastTime = currentTime;
 
-    float error = targetRPM - actualRPM;
-    float derivative = (error - previousError) / dt;
+    // Display results
+    Serial.print("Direction: ");
+    Serial.print(direction);
 
-    // PID control
-    float candidateIntegral = integral + error * dt;
+    Serial.print(" | Voltage: ");
+    Serial.print(voltage, 2);
 
-    float output = Kp * error
-                 + Ki * candidateIntegral
-                 + Kd * derivative;
+    Serial.print(" V | PWM: ");
+    Serial.print(pwm);
 
-    // Prevent integral windup
-    if ((output >= 0 && output <= 255) ||
-        (output > 255 && error < 0) ||
-        (output < 0 && error > 0)) {
-      integral = candidateIntegral;
-    }
+    Serial.print(" | Speed: ");
+    Serial.print(speedPercentage, 1);
 
-    int pwm = constrain((int)output, 0, 255);
-
-    if (targetRPM < 1.0) {
-      pwm = 0;
-      integral = 0;
-    }
-
-    analogWrite(ENA, pwm);
-    previousError = error;
-
-    // Serial Plotter output
-    Serial.print("Target_RPM:");
-    Serial.print(targetRPM);
-
-    Serial.print("\tActual_RPM:");
-    Serial.print(actualRPM);
-
-    Serial.print("\tPWM:");
-    Serial.println(pwm);
+    Serial.print("% | RPM: ");
+    Serial.println(rpm, 2);
   }
 }
